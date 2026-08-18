@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GG Fight</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, #302b63, #0f1022 65%); font-family: Arial, sans-serif; color: #fff; }
+    .game { width: min(960px, 100vw); padding: 18px; }
+    .hud { display: grid; grid-template-columns: 1fr auto 1fr; gap: 15px; align-items: center; margin-bottom: 12px; font-weight: 800; }
+    .name { font-size: 14px; letter-spacing: 1px; }
+    .right { text-align: right; }
+    .health { height: 24px; background: #361d2d; border: 3px solid #f8e8c8; box-shadow: inset 0 0 0 2px #171326; }
+    .health > div { height: 100%; width: 100%; background: linear-gradient(90deg, #4ee36e, #d9f15a); transition: width .15s; }
+    .right .health > div { margin-left: auto; background: linear-gradient(90deg, #f1d95a, #ff5d5d); }
+    #timer { font-size: 34px; color: #ffe36b; text-shadow: 3px 3px #40234f; }
+    canvas { display: block; width: 100%; border: 4px solid #f8e8c8; background: #624b8d; box-shadow: 0 12px 45px #0008; touch-action: none; }
+    .help { text-align: center; margin: 14px 0 0; color: #ded5f5; font-size: 14px; }
+    kbd { background: #27213e; border: 1px solid #9387ba; padding: 2px 6px; border-radius: 4px; }
+    #message { min-height: 25px; text-align: center; margin-top: 8px; color: #ffe36b; font-weight: bold; }
+    button { display: block; margin: 10px auto 0; border: 0; border-radius: 6px; padding: 9px 14px; font-weight: bold; cursor: pointer; background: #ffe36b; color: #231630; }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <section class="hud">
+      <div><div class="name">LUNA — J1</div><div class="health"><div id="p1Health"></div></div></div>
+      <div id="timer">60</div>
+      <div class="right"><div class="name">BOT — J2</div><div class="health"><div id="p2Health"></div></div></div>
+    </section>
+    <canvas id="arena" width="900" height="440" aria-label="Arena de luta"></canvas>
+    <p class="help"><kbd>A</kbd>/<kbd>D</kbd> mover · <kbd>W</kbd> pular · <kbd>F</kbd> soco · <kbd>G</kbd> chute</p>
+    <div id="message">Derrote o BOT!</div>
+    <button id="restart" hidden>Jogar novamente</button>
+  </main>
+  <script>
+    const canvas = document.querySelector('#arena'), ctx = canvas.getContext('2d');
+    const p1Bar = document.querySelector('#p1Health'), p2Bar = document.querySelector('#p2Health');
+    const timerEl = document.querySelector('#timer'), message = document.querySelector('#message'), restart = document.querySelector('#restart');
+    const floor = 368, keys = new Set(); let last = 0, time = 60, ended = false, botDelay = 0;
+    const fighter = (x, color, name, facing) => ({x, y: floor - 112, vx: 0, vy: 0, w: 58, h: 112, color, name, facing, health: 100, attack: 0, cooldown: 0, hit: false});
+    let p1, p2;
+    function reset() { p1 = fighter(150, '#5ee8ff', 'LUNA', 1); p2 = fighter(690, '#ff668f', 'BOT', -1); time = 60; ended = false; botDelay = 0; message.textContent = 'Derrote o BOT!'; restart.hidden = true; }
+    reset();
+    addEventListener('keydown', e => { if(['a','d','w','f','g'].includes(e.key.toLowerCase())) { keys.add(e.key.toLowerCase()); e.preventDefault(); } });
+    addEventListener('keyup', e => keys.delete(e.key.toLowerCase())); restart.onclick = reset;
+    function attack(f, other, type) { if (f.cooldown || ended) return; f.attack = type === 'kick' ? 16 : 11; f.cooldown = type === 'kick' ? 28 : 22; f.hit = false; }
+    function updateFighter(f) { f.x += f.vx; f.y += f.vy; f.vy += .72; if(f.y > floor-f.h) { f.y = floor-f.h; f.vy = 0; } f.x = Math.max(12, Math.min(canvas.width-f.w-12, f.x)); if(f.attack) f.attack--; if(f.cooldown) f.cooldown--; }
+    function hitCheck(f, other) { if(!f.attack || f.hit) return; const reach = f.attack > 11 ? 54 : 42; const fx = f.facing === 1 ? f.x+f.w : f.x-reach; if (fx < other.x+other.w && fx+reach > other.x && f.y+28 < other.y+other.h && f.y+f.h > other.y+20) { other.health = Math.max(0, other.health - (f.attack > 11 ? 12 : 8)); other.vx = f.facing * 7; f.hit = true; } }
+    function playerInput() { p1.vx *= .7; if(keys.has('a')) p1.vx = -4.2; if(keys.has('d')) p1.vx = 4.2; if(keys.has('w') && p1.y >= floor-p1.h) p1.vy = -13; if(keys.has('f')) { attack(p1,p2,'punch'); keys.delete('f'); } if(keys.has('g')) { attack(p1,p2,'kick'); keys.delete('g'); } }
+    function botAI() { p2.vx *= .72; const d = p1.x-p2.x; p2.facing = d < 0 ? -1 : 1; if(Math.abs(d) > 75) p2.vx = Math.sign(d)*2.35; if(p2.y >= floor-p2.h && Math.random() < .006) p2.vy = -12; if(Math.abs(d) < 95 && --botDelay <= 0) { attack(p2,p1,Math.random()>.5?'kick':'punch'); botDelay = 35 + Math.random()*45; } }
+    function drawFighter(f) { const flip = f.facing; ctx.save(); ctx.translate(f.x + (flip===-1?f.w:0), f.y); ctx.scale(flip,1); const arm = f.attack ? 48 : 25; ctx.fillStyle='#202037'; ctx.fillRect(15,77,13,35); ctx.fillRect(33,77,13,35); ctx.fillStyle=f.color; ctx.fillRect(6,31,46,52); ctx.fillStyle='#ffd2b7'; ctx.beginPath(); ctx.arc(29,18,20,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#171326'; ctx.fillRect(17,12,24,7); ctx.fillStyle=f.color; ctx.fillRect(44,42,arm,13); ctx.fillStyle='#ffd2b7'; ctx.fillRect(42+arm,42,12,13); ctx.fillStyle='#ffd2b7'; ctx.fillRect(2,44,20,12); ctx.restore(); ctx.fillStyle='#fff'; ctx.font='bold 12px Arial'; ctx.textAlign='center'; ctx.fillText(f.name, f.x+f.w/2, f.y-8); }
+    function draw() { ctx.clearRect(0,0,900,440); const sky=ctx.createLinearGradient(0,0,0,440); sky.addColorStop(0,'#5b4b94'); sky.addColorStop(1,'#d86b89'); ctx.fillStyle=sky; ctx.fillRect(0,0,900,440); ctx.fillStyle='#44355f'; for(let x=0;x<900;x+=75){let h=70+(x*13%110);ctx.fillRect(x,300-h,54,h);} ctx.fillStyle='#2c2541'; ctx.fillRect(0,floor,900,72); ctx.strokeStyle='#b78391'; ctx.lineWidth=2; for(let x=-100;x<1000;x+=60){ctx.beginPath();ctx.moveTo(450,floor);ctx.lineTo(x,440);ctx.stroke();} drawFighter(p1); drawFighter(p2); }
+    let secondTick = 0;
+    function loop(now) { const dt = now-last; last=now; if(!ended) { playerInput(); botAI(); p1.facing = p1.x < p2.x ? 1:-1; updateFighter(p1); updateFighter(p2); hitCheck(p1,p2); hitCheck(p2,p1); p1Bar.style.width=p1.health+'%'; p2Bar.style.width=p2.health+'%'; secondTick += dt; if(secondTick>=1000){time--;secondTick=0;timerEl.textContent=time;} if(p1.health<=0||p2.health<=0||time<=0){ended=true; const won=p2.health<=0||(time<=0&&p1.health>p2.health); message.textContent=won?'VOCÊ VENCEU!':'BOT VENCEU!';restart.hidden=false;} } draw(); requestAnimationFrame(loop); }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
